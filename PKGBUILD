@@ -46,15 +46,21 @@ if [[ ! -v "_offline" ]]; then
   _offline="false"
 fi
 if [[ ! -v "_git" ]]; then
-  _git="false"
+  _git="true"
 fi
 if [[ ! -v "_git_http" ]]; then
   _git_http="gitlab"
 fi
 if [[ ! -v "_archive_format" ]]; then
-  _archive_format="tar.gz"
-  if [[ "${_git_http}" == "github" ]]; then
-    _archive_format="zip"
+  if [[ "${_git}" == "true" ]]; then
+    if [[ "${_evmfs}" == "true" ]]; then
+      _archive_format="bundle"
+    fi
+  elif [[ "${_git}" == "false" ]]; then
+    _archive_format="tar.gz"
+    if [[ "${_git_http}" == "github" ]]; then
+      _archive_format="zip"
+    fi
   fi
 fi
 if [[ ! -v "_git_http" ]]; then
@@ -64,7 +70,7 @@ if [[ ! -v "_docs" ]]; then
   _docs="true"
 fi
 _py="python"
-_pkg=evm-gnupg
+_pkg=arch-chroot-tools
 pkgbase="${_pkg}"
 pkgname=(
   "${_pkg}"
@@ -74,11 +80,8 @@ if [[ "${_docs}" == "true" ]]; then
     "${_pkg}-docs"
   )
 fi
-pkgver="0.0.0.0.0.0.0.0.1.1.1.1.1.1"
-_crash_bash_pkgver="0.0.0.0.0.1.1.1.1"
-_evm_wallet_pkgver="0.0.0.0.0.0.0.0.0.0.1.1.1"
-_evm_openpgp_keyserver_pkgver="0.0.0.0.0.0.0.0.0.0.1"
-_commit="92bbe0543214192b209bc5e9c24fb11d4a04755e"
+pkgver="0.0.0.0.0.0.0.0.1.1.1.1.1.1.1.1"
+_commit="4e45c93b374235469f10762edc8655170d0729b4"
 pkgrel=15
 _pkgdesc=(
   "GNUPG wrapper to manage"
@@ -96,25 +99,12 @@ license=(
   'AGPL3'
 )
 depends=(
-  "evm-wallet>=${_evm_wallet_pkgver}"
-  "evm-openpgp-keyserver>=${_evm_openpgp_keyserver_pkgver}"
-  "gnupg"
-  "libcrash-bash>=${_crash_bash_pkgver}"
-)
-_evm_gnupg_docs_optdepends=(
-  "${_pkg}-docs:"
-    "Ethereum Virtual Machine"
-    "GNU Privacy Guard (EVM GnuPG)"
-    "documentation"
-    "and manuals."
-)
-_evm_gnupg_docs_ref_optdepends+=(
- "${_pkg}:"
-   "The package this documentation"
-   "package pertains to."
-)
-optdepends=(
-  "${_evm_gnupg_docs_optdepends[*]}"
+  "bash"
+  "gawk"
+  "grep"
+  "kmod"
+  "systemd"
+  "util-linux"
 )
 makedepends=(
   'make'
@@ -122,6 +112,16 @@ makedepends=(
 if [[ "${_docs}" == "true" ]]; then
   makedepends+=(
     "${_py}-docutils"
+  )
+fi
+if [[ "${_git}" == true ]]; then
+  makedepends+=(
+    "git"
+  )
+fi
+if [[ "${_evmfs}" == true ]]; then
+  makedepends+=(
+    "evmfs"
   )
 fi
 checkdepends=(
@@ -135,8 +135,10 @@ _tarfile="${_tarname}.${_archive_format}"
 if [[ "${_offline}" == "true" ]]; then
   _url="file://${HOME}/${_pkg}"
 fi
-_sum="b1ae9094b65fdff2164e91a6aa8ee50d46b6aa2926b4b6e05a9dd9ef06bad28b"
-_sig_sum="0abaa1ba4cb8d617cacfae26e3a1eb2438c9341387b03d79b2cfcbb6b915ee76"
+_bundle_sum="82520d9fe7561e2d5ad85409fe622d5ab08ae42054922dfa1733e630caa97063"
+_bundle_sig_sum="f3effedc3abaed809ae5ce31a87a04def3720d3319aec43e03d20ebfa1575a43"
+_sum="${_bundle_sum}"
+_sig_sum="${_bundle_sig_sum}"
 _evmfs_network="100"
 _evmfs_address="0x69470b18f8b8b5f92b48f6199dcb147b4be96571"
 # Truocolo
@@ -149,9 +151,6 @@ _evmfs_src="${_tarfile}::${_evmfs_uri}"
 _sig_uri="${_evmfs_dir}/${_sig_sum}"
 _sig_src="${_tarfile}.sig::${_sig_uri}"
 if [[ "${_evmfs}" == "true" ]]; then
-  makedepends+=(
-    "evmfs"
-  )
   _src="${_evmfs_src}"
   source+=(
     "${_sig_src}"
@@ -160,15 +159,12 @@ if [[ "${_evmfs}" == "true" ]]; then
     "${_sig_sum}"
   )
 elif [[ "${_git}" == true ]]; then
-  makedepends+=(
-    "git"
-  )
   _src="${_tarname}::git+${_url}#${_tag_name}=${_tag}?signed"
   _sum="SKIP"
 elif [[ "${_git}" == false ]]; then
   if [[ "${_tag_name}" == 'pkgver' ]]; then
     _uri="${_url}/archive/refs/tags/${_tag}.${_archive_format}"
-    _sum="d4f4179c6e4ce1702c5fe6af132669e8ec4d0378428f69518f2926b969663a91"
+    _sum=""
   elif [[ "${_tag_name}" == "commit" ]]; then
     _uri="${_url}/archive/${_commit}.${_archive_format}"
   fi
@@ -190,6 +186,30 @@ validpgpkeys=(
   '12D8E3D7888F741E89F86EE0FEC8567A644F1D16'
 )
 
+_git_unbundle() {
+  local \
+    _tarname="${1}" \
+    _bundle \
+    _repo \
+    _msg=()
+  _bundle="${srcdir}/${_tarname}.bundle"
+  _repo="${srcdir}/${_tarname}"
+  _msg=(
+    "Cloning '${_bundle}' into '${_repo}'."
+  )
+  msg \
+    "${_msg[*]}"
+  git \
+    clone \
+      "${_bundle}" \
+      "${_repo}" || \
+  git \
+    -C \
+      "${_repo}" \
+      pull || \
+  true
+}
+
 check() {
   cd \
     "${_tarname}"
@@ -198,7 +218,7 @@ check() {
     check
 }
 
-package_evm-gnupg() {
+package_arch-chroot-tools() {
   local \
     _make_opts=()
   _make_opts=(
@@ -217,12 +237,11 @@ package_evm-gnupg() {
     "${pkgdir}/usr/share/licenses/${pkgname}/"
 }
 
-package_evm-gnupg-docs() {
+package_arch-chroot-tools-docs() {
   local \
     _make_opts=()
   depends=()
   optdepends=(
-    "${_evm_gnupg_docs_ref_optdepends[*]}"
   )
   _make_opts=(
     DESTDIR="${pkgdir}"
