@@ -82,7 +82,7 @@ if [[ "${_docs}" == "true" ]]; then
 fi
 pkgver="0.0.0.0.0.0.0.0.1.1.1.1.1.1.1.1"
 _commit="4e45c93b374235469f10762edc8655170d0729b4"
-pkgrel=15
+pkgrel=16
 _pkgdesc=(
   "GNUPG wrapper to manage"
   "Ethereum Virtual Machine"
